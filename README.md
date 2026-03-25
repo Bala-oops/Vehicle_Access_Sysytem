@@ -1,62 +1,61 @@
-"# Vehicle_Access_Sysytem" 
-🚗 Vehicle Access Management System
-📌 Overview
+# 🚗 Vehicle Access Management System
 
-The Vehicle Access Management System is a web-based application developed to digitize and automate the process of vehicle entry requests within an organization.
+A web-based application to automate vehicle access requests with role-based approvals, PDF pass generation, and admin analytics dashboard.
 
-It replaces manual paperwork with a structured, secure, and role-based system where employees can request vehicle access and approvals are handled efficiently.
+---
 
-🎯 Key Features
-🔐 Role-based login (Employee, HOD, Security, Admin)
+## 📌 Overview
 
-📝 Vehicle pass request submission
+The **Vehicle Access Management System** is designed to replace manual vehicle entry processes with a digital solution.
 
-✅ Two-level approval system (HOD → Security)
+It allows employees to request vehicle access online, which goes through a structured approval process (HOD → Security) before generating a final vehicle pass.
 
-📄 Automatic PDF pass generation
+---
 
-📊 Admin dashboard with analytics (Power BI/Tableau)
+## 🎯 Features
 
-🔍 Real-time request status tracking
+- 🔐 Role-based authentication (Employee, HOD, Security, Admin)
+- 📝 Vehicle access request form
+- ✅ Two-level approval system
+- 📄 PDF pass generation
+- 📊 Admin dashboard with analytics (Power BI/Tableau)
+- 🔍 Track request status in real-time
+- 🛡️ Secure registration using Domain ID validation
 
-🛡️ Secure employee registration (Domain ID validation)
+---
 
-👥 User Roles
+## 👥 User Roles
 
+### 👤 Employee
+- Submit vehicle access requests  
+- View request status  
+- Download approved vehicle pass  
 
+### 🧑‍💼 HOD (Head of Department)
+- View pending requests  
+- Approve or reject requests  
 
+### 🛡️ Security
+- View HOD-approved requests  
+- Provide final approval  
 
-👤 Employee
-Submit vehicle access requests
-Track request status
-Download approved passes
+### 🧑‍💻 Admin
+- View system analytics  
+- Manage users and requests  
+- Access full system data  
 
+---
 
+## ⚙️ Workflow
 
-🧑‍💼 HOD (Head of Department)
-View pending requests
-Approve or reject requests
-
-
-
-🛡️ Security
-Verify HOD-approved requests
-Give final approval
-
-
-
-🧑‍💻 Admin
-Monitor all activities
-View analytics dashboard
-Manage users and data
-
-
-
-⚙️ System Workflow
-Employee submits vehicle request
-HOD reviews and approves/rejects
-Security verifies and approves
-System generates downloadable PDF pass
+```text
+Employee → Submit Request
+        ↓
+HOD → Approve / Reject
+        ↓
+Security → Final Approval
+        ↓
+PDF Pass Generated
 
 
 
