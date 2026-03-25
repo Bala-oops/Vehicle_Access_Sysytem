@@ -126,9 +126,10 @@
             <td class="{{ 'status-approved' if row.SecurityApproval == 'Approved' else 'status-pending' }}">
                 {{ row.SecurityApproval }}
                 {% if row.HODApproval == 'Approved' and row.SecurityApproval == 'Approved' %}
-                    <form action="{{ url_for('download_pdf', request_id=row.RequestId) }}" method="get" class="download-btn">
-                        <button type="submit">Download</button>
-                    </form>
+                    <a href="{{ url_for('download_pdf', request_id=row.RequestId) }}"
+                        class="download-btn">
+                         <button type="button">Download</button>
+                    </a>
                 {% endif %}
             </td>
         </tr>

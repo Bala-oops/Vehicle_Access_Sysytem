@@ -9,82 +9,210 @@
             padding: 0;
             background-color: #1e1e2f;
             font-family: Arial, sans-serif;
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             color: white;
         }
 
-        .login-box {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid #ccc;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
-            width: 320px;
-            text-align: center;
+        /* TOP RIGHT BUTTONS */
+        .top-right {
+            position: absolute;
+            top: 20px;
+            right: 20px;
         }
 
-        .login-box h1 {
-            margin-bottom: 15px;
-            font-size: 24px;
+        .top-right form {
+            display: inline;
         }
 
-        .login-box p {
-            margin-bottom: 20px;
-            font-size: 16px;
-        }
-
-        form {
-            margin-top: 10px;
-        }
-
-        button {
-            width: 100%;
-            padding: 10px;
-            font-size: 16px;
-            border: none;
+        .top-right button {
+            padding: 8px 12px;
+            margin-left: 10px;
             border-radius: 5px;
+            border: none;
             cursor: pointer;
         }
 
-        /* Green button - Open Dashboard */
-        form:first-of-type button {
-            background-color: #4CAF50;
-            color: white;
+        .green { background-color: #4CAF50; color: white; }
+        .blue { background-color: #2196F3; color: white; }
+
+        .center-box {
+            text-align: center;
+            margin-top: 80px;
         }
 
-        form:first-of-type button:hover {
-            background-color: #45a049;
+        .table-buttons button {
+            margin: 5px;
+            padding: 10px;
+            cursor: pointer;
         }
 
-        /* Blue button - Open Power BI */
-        form:last-of-type button {
-            background-color: #2196F3;
-            color: white;
-            margin-top: 10px;
+        table {
+            margin: auto;
+            margin-top: 20px;
+            border-collapse: collapse;
+            background: white;
+            color: black;
         }
 
-        form:last-of-type button:hover {
-            background-color: #1976D2;
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+        }
+
+        .edit-btn, .submit-btn {
+            margin-top: 15px;
+            padding: 8px 12px;
+            cursor: pointer;
         }
     </style>
 </head>
-<body>
-    <div class="login-box">
-        <h1>Welcome, Admin</h1>
-        <p>This is your dashboard page.</p>
 
-        <!-- Button 1: Open Dashboard (Flask route) -->
+<body>
+
+    <!-- TOP RIGHT BUTTONS -->
+    <div class="top-right">
         <form action="{{ url_for('dashboard') }}">
-            <button type="submit">Open Dashboard</button>
+            <button class="green">Dashboard</button>
         </form>
 
-        <!-- Button 2: Open Power BI (external link) -->
         <form action="https://app.powerbi.com/groups/me/reports/YOUR_REPORT_ID" target="_blank">
-            <button type="submit">Open Power BI Page</button>
+            <button class="blue">Power BI</button>
         </form>
     </div>
+
+    <div class="center-box">
+        <h1>Welcome, Admin</h1>
+        <p>Select a table to manage data</p>
+
+        <!-- TABLE BUTTONS -->
+        <div class="table-buttons">
+            <button onclick="loadTable('RegisteredEmployees')">RegisteredEmployees</button>
+            <button onclick="loadTable('RelianceEmployees')">RelianceEmployees</button>
+            <button onclick="loadTable('Admin')">Admin</button>
+            <button onclick="loadTable('HOD')">HOD</button>
+            <button onclick="loadTable('Security')">Security</button>
+            <button onclick="loadTable('VehicleAccessRequests')">VehicleAccessRequests</button>
+        </div>
+
+        <!-- EDIT + SUBMIT (HIDDEN INITIALLY) -->
+        <button id="editBtn" class="edit-btn" onclick="enableEdit()" style="display:none;">Edit</button>
+        <button id="addRowBtn" onclick="addRow()" style="display:none;">Add Row</button>
+        <button id="submitBtn" class="submit-btn" onclick="saveChanges()" style="display:none;">Submit</button>
+
+        <!-- TABLE DATA -->
+        <div id="tableContainer"></div>
+    </div>
+
+<script>
+let currentTable = "";
+
+function loadTable(table) {
+    currentTable = table;
+
+    fetch("/get_table_data/" + table)
+    .then(res => res.json())
+    .then(data => {
+
+        if (!data || data.length === 0) {
+            document.getElementById("tableContainer").innerHTML = "<p>No data</p>";
+            return;
+        }
+
+        let html = "<table><tr>";
+
+        Object.keys(data[0]).forEach(key => {
+            html += "<th>" + key + "</th>";
+        });
+
+        html += "</tr>";
+
+        data.forEach(row => {
+            html += "<tr>";
+            let i = 0;
+            for (let key in row) {
+                if (i === 0) {
+                    html += `<td contenteditable="false">${row[key]}</td>`; // lock ID
+                } else {
+                    html += `<td contenteditable="false">${row[key]}</td>`;
+                }
+                i++;
+            }
+            html += "</tr>";
+        });
+
+        html += "</table>";
+
+        document.getElementById("tableContainer").innerHTML = html;
+
+        document.getElementById("editBtn").style.display = "inline-block";
+        document.getElementById("addRowBtn").style.display = "inline-block";
+        document.getElementById("submitBtn").style.display = "none";
+    });
+}
+
+function enableEdit() {
+    document.querySelectorAll("td").forEach((td, i) => {
+        if (i % document.querySelectorAll("th").length !== 0) {
+            td.contentEditable = true;
+        }
+    });
+
+    document.getElementById("submitBtn").style.display = "inline-block";
+}
+
+function addRow() {
+    let table = document.querySelector("table");
+    let cols = document.querySelectorAll("th").length;
+
+    let row = table.insertRow();
+
+    for (let i = 0; i < cols; i++) {
+        let cell = row.insertCell();
+        cell.contentEditable = true;
+
+        // leave EMPTY (user must type)
+        cell.innerText = "";
+    }
+
+    document.getElementById("submitBtn").style.display = "inline-block";
+}
+
+function saveChanges() {
+    let rows = [];
+    let headers = [];
+
+    document.querySelectorAll("th").forEach(th => {
+        headers.push(th.innerText);
+    });
+
+    document.querySelectorAll("table tr").forEach((tr, i) => {
+        if (i === 0) return;
+
+        let row = {};
+        tr.querySelectorAll("td").forEach((td, j) => {
+            row[headers[j]] = td.innerText;
+        });
+
+        rows.push(row);
+    });
+
+    fetch("/update_table", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            table: currentTable,
+            rows: rows
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            alert("Error: " + data.error);
+        } else {
+            alert("Saved successfully!");
+            loadTable(currentTable);
+        }
+    });
+}
+</script>
 </body>
 </html>

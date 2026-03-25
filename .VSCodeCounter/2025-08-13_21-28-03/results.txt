@@ -1,0 +1,49 @@
+Date : 2025-08-13 21:28:03
+Directory : d:\Vehicle Access Management
+Total : 17 files,  1544 codes, 14 comments, 237 blanks, all 1795 lines
+
+Languages
++------------------+------------+------------+------------+------------+------------+
+| language         | files      | code       | comment    | blank      | total      |
++------------------+------------+------------+------------+------------+------------+
+| HTML             |         13 |      1,131 |          8 |        148 |      1,287 |
+| Python           |          2 |        352 |          6 |         83 |        441 |
+| PostCSS          |          1 |         33 |          0 |          5 |         38 |
+| pip requirements |          1 |         28 |          0 |          1 |         29 |
++------------------+------------+------------+------------+------------+------------+
+
+Directories
++---------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                          | files      | code       | comment    | blank      | total      |
++---------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                             |         17 |      1,544 |         14 |        237 |      1,795 |
+| . (Files)                                                     |          2 |        380 |          6 |         83 |        469 |
+| database                                                      |          1 |          0 |          0 |          1 |          1 |
+| static                                                        |          1 |         33 |          0 |          5 |         38 |
+| static\css                                                    |          1 |         33 |          0 |          5 |         38 |
+| templates                                                     |         13 |      1,131 |          8 |        148 |      1,287 |
++---------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++---------------------------------------------------------------+------------------+------------+------------+------------+------------+
+| filename                                                      | language         | code       | comment    | blank      | total      |
++---------------------------------------------------------------+------------------+------------+------------+------------+------------+
+| d:\Vehicle Access Management\app.py                           | Python           |        352 |          6 |         82 |        440 |
+| d:\Vehicle Access Management\database\db_config.py            | Python           |          0 |          0 |          1 |          1 |
+| d:\Vehicle Access Management\requirements.txt                 | pip requirements |         28 |          0 |          1 |         29 |
+| d:\Vehicle Access Management\static\css\style.css             | PostCSS          |         33 |          0 |          5 |         38 |
+| d:\Vehicle Access Management\templates\admin.html             | HTML             |         77 |          2 |         12 |         91 |
+| d:\Vehicle Access Management\templates\dashboard.html         | HTML             |         32 |          0 |          4 |         36 |
+| d:\Vehicle Access Management\templates\details.html           | HTML             |         67 |          0 |          8 |         75 |
+| d:\Vehicle Access Management\templates\enter_details.html     | HTML             |        121 |          4 |         19 |        144 |
+| d:\Vehicle Access Management\templates\hod.html               | HTML             |         75 |          0 |         12 |         87 |
+| d:\Vehicle Access Management\templates\hod_details.html       | HTML             |         55 |          0 |          5 |         60 |
+| d:\Vehicle Access Management\templates\hod_requests.html      | HTML             |        106 |          0 |         15 |        121 |
+| d:\Vehicle Access Management\templates\login.html             | HTML             |        127 |          2 |          9 |        138 |
+| d:\Vehicle Access Management\templates\pass.html              | HTML             |        126 |          0 |         17 |        143 |
+| d:\Vehicle Access Management\templates\register.html          | HTML             |         87 |          0 |          9 |         96 |
+| d:\Vehicle Access Management\templates\security.html          | HTML             |         75 |          0 |         12 |         87 |
+| d:\Vehicle Access Management\templates\security_details.html  | HTML             |         58 |          0 |          9 |         67 |
+| d:\Vehicle Access Management\templates\security_requests.html | HTML             |        125 |          0 |         17 |        142 |
+| Total                                                         |                  |      1,544 |         14 |        237 |      1,795 |
++---------------------------------------------------------------+------------------+------------+------------+------------+------------+

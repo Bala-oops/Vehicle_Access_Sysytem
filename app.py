@@ -1,439 +1,1063 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify, send_file
-import pyodbc
+# app.py - Updated for Supabase PostgreSQL (minimal changes to your existing project)
+
+from flask import (
+    Flask, render_template, request, redirect, url_for,
+    flash, session, jsonify, send_file
+)
+import os
+import io
+
+import psycopg2
+from dotenv import load_dotenv
+
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-import io
-import os
-db_url = os.environ.get("DATABASE_URL")
 
-import os
-import psycopg2
+# -------------------------
+# CONFIG - Supabase PostgreSQL
+# -------------------------
+load_dotenv()
 
-# Get the connection string from Render environment variable
-db_url = os.environ.get("DATABASE_URL")
-
-# Connect to PostgreSQL
-conn = psycopg2.connect(db_url)
-cursor = conn.cursor()
-
-# Optional: Test the connection
-cursor.execute("SELECT version();")
-print("Connected to:", cursor.fetchone())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'
-
-conn_str = (
-    "Driver={ODBC Driver 17 for SQL Server};"
-    "Server=localhost;"
-    "Database=VehicleAccessPermit;"
-    "Trusted_Connection=yes;"
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres.bbtyjzupkszhuffqqzkp:%2F77SB4P9ST7Ds%40%2F@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
 )
 
-@app.route('/dashboard')
-def dashboard():
-    return render_template('dashboard.html')
+def get_conn():
+    return psycopg2.connect(DATABASE_URL)
 
-@app.route('/')
+
+# -------------------------
+# FLASK APP
+# -------------------------
+app = Flask(__name__)
+app.secret_key = "change_this_secret_in_production"
+
+# -------------------------
+# Utility helpers
+# -------------------------
+def fetch_request_by_id(cursor, request_id):
+    cursor.execute(
+        """
+        SELECT RequestId, RequestedBy, VehicleType, TypeOfVehicle, AccessLocation,
+               VehicleNo, EngineNo, ChassisNo, Model, OwnerUsername, Address, ContactNo,
+               DriverName, DriverAddress, FromDate, ToDate, HODApproval, SecurityApproval
+        FROM VehicleAccessRequests
+        WHERE RequestId=%s
+        """,
+        (request_id,),
+    )
+    return cursor.fetchone()
+
+
+def require_login():
+    return "DomainId" in session
+
+
+def require_role(role):
+    return session.get("Role") == role
+
+
+# -------------------------
+# ROUTES
+# -------------------------
+@app.route("/")
 def home():
-    return render_template('login.html')
+    return render_template("login.html")
 
-@app.route('/login', methods=['POST'])
+
+# ---- LOGIN ----
+@app.route("/login", methods=["POST"])
 def login():
-    domain_id = request.form['domain_id']
-    password = request.form['password']
+    domain_id = request.form.get("domain_id")
+    password = request.form.get("password")
 
+    if not domain_id or not password:
+        flash("Please provide Domain ID and Password")
+        return redirect(url_for("home"))
+
+    conn = None
+    cursor = None
     try:
-        conn = pyodbc.connect(conn_str)
+        conn = get_conn()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT * FROM RegisteredEmployees WHERE DomainId = ? AND Password = ?", (domain_id, password))
-        reg_user = cursor.fetchone()
-        if reg_user:
-            session['DomainId'] = domain_id
+        # RegisteredEmployees
+        cursor.execute(
+            "SELECT DomainId FROM RegisteredEmployees WHERE DomainId=%s AND Password=%s",
+            (domain_id, password),
+        )
+        if cursor.fetchone():
+            session["DomainId"] = domain_id
+            session["Role"] = "Registered"
             flash("Login Successful - Registered Employee")
-            return redirect(url_for('enter_details'))
+            return redirect(url_for("enter_details"))
 
-        cursor.execute("SELECT * FROM HOD WHERE DomainId = ? AND Password = ?", (domain_id, password))
-        hod_user = cursor.fetchone()
-        if hod_user:
-            session['DomainId'] = domain_id
+        # HOD
+        cursor.execute(
+            "SELECT DomainId FROM HOD WHERE DomainId=%s AND Password=%s",
+            (domain_id, password),
+        )
+        if cursor.fetchone():
+            session["DomainId"] = domain_id
+            session["Role"] = "HOD"
             flash("Login Successful - HOD")
-            return redirect(url_for('hod'))
+            return redirect(url_for("hod"))
 
-        cursor.execute("SELECT * FROM Security WHERE DomainId = ? AND Password = ?", (domain_id, password))
-        sec_user = cursor.fetchone()
-        if sec_user:
-            session['DomainId'] = domain_id
+        # Security
+        cursor.execute(
+            "SELECT DomainId FROM Security WHERE DomainId=%s AND Password=%s",
+            (domain_id, password),
+        )
+        if cursor.fetchone():
+            session["DomainId"] = domain_id
+            session["Role"] = "Security"
             flash("Login Successful - Security")
-            return redirect(url_for('security'))
-        
-        cursor.execute("SELECT * FROM Admin WHERE DomainId = ? AND Password = ?", (domain_id, password))
-        admin_user = cursor.fetchone()
-        if admin_user:
-            session['DomainId'] = domain_id
+            return redirect(url_for("security"))
+
+        # Admin
+        cursor.execute(
+            "SELECT DomainId FROM Admin WHERE DomainId=%s AND Password=%s",
+            (domain_id, password),
+        )
+        if cursor.fetchone():
+            session["DomainId"] = domain_id
+            session["Role"] = "Admin"
             flash("Login Successful - Admin")
-            return redirect(url_for('admin'))
+            return redirect(url_for("admin"))
 
-        flash("Invalid Details")
-        return redirect(url_for('home'))
-
+        flash("Invalid Domain ID or Password")
+        return redirect(url_for("home"))
     except Exception as e:
         flash(f"Login Error: {str(e)}")
-        return redirect(url_for('home'))
-    
-@app.route('/admin')
-def admin():
-    return render_template('admin.html')
+        return redirect(url_for("home"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-@app.route('/logout')
+
+# ---- LOGOUT ----
+@app.route("/logout")
 def logout():
     session.clear()
     flash("Logged out successfully.")
-    return redirect(url_for('home'))
+    return redirect(url_for("home"))
 
-@app.route('/register', methods=['GET', 'POST'])
+
+# ---- REGISTER ----
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    if request.method == 'POST':
-        domain_id = request.form['domain_id']
-        domain_name = request.form['domain_name']
-        email = request.form['email']
-        password = request.form['password']
-        mobile_number = request.form['mobile_number']
+    if request.method == "POST":
+        domain_id = request.form.get("domain_id")
+        domain_name = request.form.get("domain_name")
+        email = request.form.get("email")
+        password = request.form.get("password")
+        mobile_number = request.form.get("mobile_number")
 
+        if not all([domain_id, domain_name, email, password, mobile_number]):
+            flash("All fields are required!")
+            return redirect(url_for("register"))
+
+        conn = None
+        cursor = None
         try:
-            conn = pyodbc.connect(conn_str)
+            conn = get_conn()
             cursor = conn.cursor()
 
-            cursor.execute("SELECT domainid FROM RelianceEmployees WHERE domainid = ?", (domain_id,))
-            reliance_result = cursor.fetchone()
+            # verify domain exists in RelianceEmployees
+            cursor.execute(
+                "SELECT DomainId FROM RelianceEmployees WHERE DomainId=%s",
+                (domain_id,),
+            )
+            if not cursor.fetchone():
+                flash("Domain ID does not exist in RelianceEmployees")
+                return redirect(url_for("register"))
 
-            if not reliance_result:
-                flash("DomainId Does Not Exist")
-                return redirect(url_for('register'))
-
-            cursor.execute("SELECT * FROM RegisteredEmployees WHERE DomainID = ?", (domain_id,))
-            registered_result = cursor.fetchone()
-
-            if registered_result:
-                cursor.execute("""
+            cursor.execute(
+                "SELECT DomainId FROM RegisteredEmployees WHERE DomainId=%s",
+                (domain_id,),
+            )
+            if cursor.fetchone():
+                cursor.execute(
+                    """
                     UPDATE RegisteredEmployees
-                    SET DomainName = ?, Email = ?, Password = ?, MobileNumber = ?
-                    WHERE DomainID = ?
-                """, (domain_name, email, password, mobile_number, domain_id))
-                conn.commit()
-                flash('Registration Updated Successfully.')
+                    SET DomainName=%s, Email=%s, Password=%s, MobileNumber=%s
+                    WHERE DomainId=%s
+                    """,
+                    (domain_name, email, password, mobile_number, domain_id),
+                )
+                flash("Registration Updated Successfully.")
             else:
-                cursor.execute("""
-                    INSERT INTO RegisteredEmployees (DomainID, DomainName, Email, Password, MobileNumber)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (domain_id, domain_name, email, password, mobile_number))
-                conn.commit()
-                flash('Registration Successful! You can now login.')
-
-            return redirect(url_for('home'))
-
+                cursor.execute(
+                    """
+                    INSERT INTO RegisteredEmployees
+                    (DomainId, DomainName, Email, Password, MobileNumber)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (domain_id, domain_name, email, password, mobile_number),
+                )
+                flash("Registration Successful! You can now login.")
+            conn.commit()
+            return redirect(url_for("home"))
         except Exception as e:
-            flash(f'Registration Error: {str(e)}')
-            return redirect(url_for('register'))
+            flash(f"Registration Error: {str(e)}")
+            return redirect(url_for("register"))
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
-    return render_template('register.html')
+    return render_template("register.html")
 
-@app.route('/enter_details')
+
+# ---- ENTER DETAILS (employee page) ----
+@app.route("/enter_details")
 def enter_details():
-    if 'DomainId' not in session:
+    if not require_login():
         flash("Please login first.")
-        return redirect(url_for('home'))
-    return render_template('enter_details.html')
-
-@app.route('/hod')
-def hod():
-    if 'DomainId' not in session:
-        flash("Please login first.")
-        return redirect(url_for('home'))
-    return render_template('hod.html')
-
-@app.route('/security')
-def security():
-    if 'DomainId' not in session:
-        flash("Please login first.")
-        return redirect(url_for('home'))
-    return render_template('security.html')
-
-@app.route('/get_employee_details')
-def get_employee_details():
-    domain_id = session.get('DomainId')
-    if not domain_id:
-        return jsonify({"error": "Not logged in"}), 401
-
-    conn = pyodbc.connect(conn_str)
-    cursor = conn.cursor()
-    cursor.execute("SELECT DomainName, Email, Password, MobileNumber FROM RegisteredEmployees WHERE DomainID = ?", domain_id)
-    row = cursor.fetchone()
-
-    if row:
-        return jsonify({
-            "DomainName": row[0],
-            "Email": row[1],
-            "Password": row[2],
-            "MobileNumber": row[3]
-        })
-    else:
-        return jsonify({"error": "User not found"}), 404
-
-@app.route('/details')
-def details():
-    return render_template('details.html')
-
-@app.route('/check_pass_status')
-def check_pass_status():
-    domain_id = session.get('DomainId')
-    if not domain_id:
-        flash("Session expired. Please log in again.")
-        return redirect(url_for('home'))
-
-    conn = pyodbc.connect(conn_str)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM VehicleAccessRequests WHERE RequestedBy = ?", (domain_id,))
-    rows = cursor.fetchall()
-
-    return render_template('pass.html', requests=rows)
-
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from flask import send_file, flash, redirect, url_for
-import io
-import pyodbc
-
-@app.route('/download_pdf/<int:request_id>')
-def download_pdf(request_id):
-    try:
-        conn = pyodbc.connect(conn_str)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM VehicleAccessRequests WHERE RequestId = ?", (request_id,))
-        row = cursor.fetchone()
-
-        if not row:
-            flash("No such request found.")
-            return redirect(url_for('check_pass_status'))
-
-        columns = [desc[0] for desc in cursor.description]
-        request_data = dict(zip(columns, row))
-
-        buffer = io.BytesIO()
-        p = canvas.Canvas(buffer, pagesize=A4)
-
-        # Document Header
-        p.setFont("Helvetica-Bold", 16)
-        p.drawCentredString(300, 800, "Vehicle Access Pass Summary")
-        p.setFont("Helvetica", 10)
-        p.line(40, 795, 550, 795)
-
-        # Add request details neatly
-        y = 770
-        for key, value in request_data.items():
-            p.drawString(50, y, f"{key}:")
-            p.drawString(200, y, str(value))
-            y -= 20
-            if y < 50:
-                p.showPage()
-                y = 800
-                p.setFont("Helvetica", 10)
-
-        # Footer
-        p.setFont("Helvetica-Oblique", 9)
-        p.drawString(400, 30, "Generated by Vehicle Access Portal")
-
-        p.showPage()
-        p.save()
-        buffer.seek(0)
-
-        return send_file(
-            buffer,
-            as_attachment=True,
-            download_name=f"VehicleAccessRequest_{request_id}.pdf",
-            mimetype='application/pdf'
-        )
-
-    except Exception as e:
-        flash(f"Error generating PDF: {str(e)}")
-        return redirect(url_for('check_pass_status'))
+        return redirect(url_for("home"))
+    return render_template("enter_details.html")
 
 
-@app.route('/submit_vehicle_pass', methods=['POST'])
+# ---- SUBMIT VEHICLE PASS ----
+@app.route("/submit_vehicle_pass", methods=["POST"])
 def submit_vehicle_pass():
+    if not require_login():
+        flash("Please login first.")
+        return redirect(url_for("home"))
+
+    domain_id = session.get("DomainId")
+    form = request.form
+    conn = None
+    cursor = None
     try:
-        domain_id = session.get('DomainId')
-        if not domain_id:
-            flash("Session expired. Please log in again.")
-            return redirect(url_for('home'))
-
-        data = request.form
-
-        conn = pyodbc.connect(conn_str)
+        conn = get_conn()
         cursor = conn.cursor()
-
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO VehicleAccessRequests (
                 RequestedBy, VehicleType, TypeOfVehicle, AccessLocation, VehicleNo,
                 EngineNo, ChassisNo, Model, OwnerUsername, Address, ContactNo,
                 DriverName, DriverAddress, FromDate, ToDate, HODApproval, SecurityApproval
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', 'Pending')
-        """, (
-            domain_id,
-            data['vehicle_type'], data['type_of_vehicle'], data['access_location'], data['vehicle_no'],
-            data['engine_no'], data['chassis_no'], data['model'], data['owner_username'],
-            data['address'], data['contact_no'], data['driver_name'], data['driver_address'],
-            data['from_date'], data['to_date']
-        ))
-
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pending', 'Pending')
+            """,
+            (
+                domain_id,
+                form.get("vehicle_type") or form.get("VehicleType"),
+                form.get("type_of_vehicle") or form.get("TypeOfVehicle"),
+                form.get("access_location") or form.get("AccessLocation"),
+                form.get("vehicle_no") or form.get("VehicleNo"),
+                form.get("engine_no") or form.get("EngineNo"),
+                form.get("chassis_no") or form.get("ChassisNo"),
+                form.get("model") or form.get("Model"),
+                form.get("owner_username") or form.get("OwnerUsername"),
+                form.get("address") or form.get("Address"),
+                form.get("contact_no") or form.get("ContactNo"),
+                form.get("driver_name") or form.get("DriverName"),
+                form.get("driver_address") or form.get("DriverAddress"),
+                form.get("from_date") or form.get("FromDate"),
+                form.get("to_date") or form.get("ToDate"),
+            ),
+        )
         conn.commit()
         flash("Pass Request Generated")
-        return redirect(url_for('enter_details'))
-
+        return redirect(url_for("enter_details"))
     except Exception as e:
         flash(f"Error submitting request: {str(e)}")
-        return redirect(url_for('enter_details'))
+        return redirect(url_for("enter_details"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-@app.route('/delete_request/<int:request_id>', methods=['POST'])
-def delete_request(request_id):
+
+# ---- CHECK PASS STATUS (employee) ----
+@app.route("/check_pass_status")
+def check_pass_status():
+    if not require_login():
+        flash("Please login first.")
+        return redirect(url_for("home"))
+
+    domain_id = session.get("DomainId")
+    conn = None
+    cursor = None
+    requests = []
     try:
-        conn = pyodbc.connect(conn_str)
+        conn = get_conn()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM VehicleAccessRequests WHERE RequestId = ?", request_id)
-        conn.commit()
-        flash("Request Deleted")
-        return redirect(request.referrer or url_for('hod_requests'))
+        cursor.execute(
+            """
+            SELECT RequestId, RequestedBy, VehicleType, TypeOfVehicle, AccessLocation,
+                   VehicleNo, EngineNo, ChassisNo, Model, OwnerUsername, Address, ContactNo,
+                   DriverName, DriverAddress, FromDate, ToDate, HODApproval, SecurityApproval
+            FROM VehicleAccessRequests
+            WHERE RequestedBy=%s
+            ORDER BY RequestId DESC
+            """,
+            (domain_id,),
+        )
+        rows = cursor.fetchall()
+        for r in rows:
+            requests.append({
+                "RequestId": r[0], "RequestedBy": r[1], "VehicleType": r[2],
+                "TypeOfVehicle": r[3], "AccessLocation": r[4], "VehicleNo": r[5],
+                "EngineNo": r[6], "ChassisNo": r[7], "Model": r[8],
+                "OwnerUsername": r[9], "Address": r[10], "ContactNo": r[11],
+                "DriverName": r[12], "DriverAddress": r[13],
+                "FromDate": r[14], "ToDate": r[15],
+                "HODApproval": r[16], "SecurityApproval": r[17],
+            })
     except Exception as e:
-        return f"Error: {str(e)}", 500
+        flash(f"Error fetching status: {str(e)}")
+        return redirect(url_for("enter_details"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-@app.route('/approve_request/<int:request_id>', methods=['POST'])
-def approve_request(request_id):
+    return render_template("pass.html", requests=requests)
+
+
+# ---- DOWNLOAD PDF (employee/admin) ----
+@app.route("/download_pdf")
+def download_pdf():
+    request_id = request.args.get("request_id") or request.args.get("id")
+    if not request_id:
+        flash("Missing request id.")
+        return redirect(url_for("home"))
     try:
-        status = request.form.get('status', 'Approved')
-        conn = pyodbc.connect(conn_str)
-        cursor = conn.cursor()
-        cursor.execute("UPDATE VehicleAccessRequests SET HODApproval = ? WHERE RequestId = ?", (status, request_id))
-        conn.commit()
-        flash("Approved Pass")
-        return redirect(request.referrer or url_for('hod_requests'))
-    except Exception as e:
-        return f"Error: {str(e)}", 500
+        request_id = int(request_id)
+    except Exception:
+        flash("Invalid request id.")
+        return redirect(url_for("home"))
 
-@app.route('/hod_details')
+    conn = None
+    cursor = None
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+        row = fetch_request_by_id(cursor, request_id)
+        if not row:
+            flash("Request not found.")
+            return redirect(url_for("home"))
+        if row[16] != "Approved" or row[17] != "Approved":
+            flash("Pass is not fully approved yet.")
+            return redirect(url_for("home"))
+
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=A4)
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(50, 800, "Vehicle Access Pass")
+        p.setFont("Helvetica", 11)
+        y = 770
+        pairs = [
+            ("RequestId", row[0]), ("RequestedBy", row[1]), ("VehicleType", row[2]),
+            ("TypeOfVehicle", row[3]), ("AccessLocation", row[4]), ("VehicleNo", row[5]),
+            ("EngineNo", row[6]), ("ChassisNo", row[7]), ("Model", row[8]),
+            ("OwnerUsername", row[9]), ("Address", row[10]), ("ContactNo", row[11]),
+            ("DriverName", row[12]), ("DriverAddress", row[13]),
+            ("FromDate", row[14]), ("ToDate", row[15]),
+            ("HODApproval", row[16]), ("SecurityApproval", row[17])
+        ]
+        for label, val in pairs:
+            p.drawString(50, y, f"{label}: {val}")
+            y -= 18
+            if y < 50:
+                p.showPage()
+                y = 800
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+        filename = f"vehicle_pass_{request_id}.pdf"
+        return send_file(buffer, as_attachment=True, download_name=filename, mimetype="application/pdf")
+    except Exception as e:
+        flash(f"Error generating PDF: {str(e)}")
+        return redirect(url_for("home"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# -------------------------
+# HOD: profile & requests
+# -------------------------
+@app.route("/hod")
+def hod():
+    if not require_login() or not require_role("HOD"):
+        flash("Access denied. HOD only.")
+        return redirect(url_for("home"))
+    return render_template("hod.html")
+
+
+@app.route("/hod_details")
 def hod_details():
-    domain_id = session.get('DomainId')
-    if not domain_id:
-        flash("Login required")
-        return redirect(url_for('home'))
+    if not require_login() or not require_role("HOD"):
+        flash("Access denied.")
+        return redirect(url_for("home"))
+    domain = session.get("DomainId")
+    conn = None
+    cursor = None
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT DomainId, DomainName, Department, Email, MobileNumber FROM HOD WHERE DomainId=%s",
+            (domain,),
+        )
+        row = cursor.fetchone()
+        hod = None
+        if row:
+            hod = {
+                "DomainId": row[0], "DomainName": row[1],
+                "Department": row[2], "Email": row[3], "MobileNumber": row[4]
+            }
+        return render_template("hod_details.html", hod=hod)
+    except Exception as e:
+        flash(f"Error loading HOD details: {str(e)}")
+        return redirect(url_for("hod"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-    conn = pyodbc.connect(conn_str)
-    cursor = conn.cursor()
-    cursor.execute("SELECT DomainID, DomainName, Department, Email, MobileNumber FROM HOD WHERE DomainID = ?", (domain_id,))
-    row = cursor.fetchone()
 
-    if row:
-        hod_data = {
-            "DomainID": row[0],
-            "DomainName": row[1],
-            "Department": row[2],
-            "Email": row[3],
-            "MobileNumber": row[4]
-        }
-        return render_template('hod_details.html', hod=hod_data)
-    else:
-        flash("No HOD details found")
-        return render_template('hod_details.html', hod=None)
-
-@app.route('/hod_requests')
+@app.route("/hod_requests")
 def hod_requests():
+    if not require_login() or not require_role("HOD"):
+        flash("Access denied. HOD only.")
+        return redirect(url_for("home"))
+    conn = None
+    cursor = None
+    requests = []
     try:
-        conn = pyodbc.connect(conn_str)
+        conn = get_conn()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM VehicleAccessRequests WHERE HODApproval = 'Pending'")
-        rows = cursor.fetchall()
-        columns = [column[0] for column in cursor.description]
-        requests = [dict(zip(columns, row)) for row in rows]
-        return render_template('hod_requests.html', requests=requests)
+        cursor.execute(
+            """
+            SELECT RequestId, RequestedBy, VehicleType, AccessLocation, FromDate, ToDate, HODApproval
+            FROM VehicleAccessRequests
+            WHERE HODApproval='Pending'
+            ORDER BY RequestId DESC
+            """
+        )
+        for r in cursor.fetchall():
+            requests.append({
+                "RequestId": r[0], "RequestedBy": r[1], "VehicleType": r[2],
+                "AccessLocation": r[3], "FromDate": r[4], "ToDate": r[5], "HODApproval": r[6]
+            })
+        return render_template("hod_requests.html", requests=requests)
     except Exception as e:
-        return f"Error: {str(e)}", 500
+        flash(f"Error loading HOD requests: {str(e)}")
+        return redirect(url_for("hod"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-@app.route('/security_details')
+
+@app.route("/approve_request/<int:request_id>", methods=["POST"])
+def approve_request(request_id):
+    if not require_login() or not require_role("HOD"):
+        flash("Access denied.")
+        return redirect(url_for("home"))
+    new_status = request.form.get("status") or "Approved"
+    if new_status not in ("Pending", "Approved"):
+        flash("Invalid status.")
+        return redirect(url_for("hod_requests"))
+
+    conn = None
+    cursor = None
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE VehicleAccessRequests SET HODApproval=%s WHERE RequestId=%s",
+            (new_status, request_id),
+        )
+        conn.commit()
+        flash(f"HOD status updated to {new_status} for request {request_id}")
+        return redirect(url_for("hod_requests"))
+    except Exception as e:
+        flash(f"Error updating HOD status: {str(e)}")
+        return redirect(url_for("hod_requests"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@app.route("/delete_request/<int:request_id>", methods=["POST"])
+def delete_request(request_id):
+    if not require_login():
+        flash("Please login first.")
+        return redirect(url_for("home"))
+
+    domain = session.get("DomainId")
+    role = session.get("Role")
+    conn = None
+    cursor = None
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT RequestedBy FROM VehicleAccessRequests WHERE RequestId=%s",
+            (request_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            flash("Request not found.")
+            return redirect(url_for("home"))
+        owner = row[0]
+        if role in ("Admin", "HOD", "Security") or owner == domain:
+            cursor.execute(
+                "DELETE FROM VehicleAccessRequests WHERE RequestId=%s",
+                (request_id,),
+            )
+            conn.commit()
+            flash(f"Request {request_id} deleted.")
+            if role == "HOD":
+                return redirect(url_for("hod_requests"))
+            if role == "Security":
+                return redirect(url_for("security_requests"))
+            if role == "Admin":
+                return redirect(url_for("admin"))
+            return redirect(url_for("enter_details"))
+        else:
+            flash("You are not authorized to delete this request.")
+            return redirect(url_for("home"))
+    except Exception as e:
+        flash(f"Error deleting request: {str(e)}")
+        return redirect(url_for("home"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+# -------------------------
+# SECURITY
+# -------------------------
+@app.route("/security")
+def security():
+    if not require_login() or not require_role("Security"):
+        flash("Access denied. Security only.")
+        return redirect(url_for("home"))
+    return render_template("security.html")
+
+
+@app.route("/security_details")
 def security_details():
-    domain_id = session.get('DomainId')
-    if not domain_id:
-        flash("Login required")
-        return redirect(url_for('home'))
+    if not require_login() or not require_role("Security"):
+        flash("Access denied.")
+        return redirect(url_for("home"))
+    domain = session.get("DomainId")
+    conn = None
+    cursor = None
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT DomainId, DomainName, Email, MobileNumber FROM Security WHERE DomainId=%s",
+            (domain,),
+        )
+        row = cursor.fetchone()
+        security = None
+        if row:
+            security = {"DomainId": row[0], "DomainName": row[1], "Email": row[2], "MobileNumber": row[3]}
+        return render_template("security_details.html", security=security)
+    except Exception as e:
+        flash(f"Error loading security details: {str(e)}")
+        return redirect(url_for("security"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-    conn = pyodbc.connect(conn_str)
-    cursor = conn.cursor()
-    cursor.execute("SELECT DomainId, DomainName, Email, MobileNumber FROM Security WHERE DomainId = ?", (domain_id,))
-    row = cursor.fetchone()
 
-    if row:
-        sec_data = {
-            "DomainId": row[0],
-            "DomainName": row[1],
-            "Email": row[2],
-            "MobileNumber": row[3]
-        }
-        return render_template('security_details.html', security=sec_data)
-    else:
-        flash("No Security details found")
-        return render_template('security_details.html', security=None)
-
-@app.route('/security_requests')
+@app.route("/security_requests")
 def security_requests():
+    if not require_login() or not require_role("Security"):
+        flash("Access denied. Security only.")
+        return redirect(url_for("home"))
+    conn = None
+    cursor = None
+    requests = []
     try:
-        conn = pyodbc.connect(conn_str)
+        conn = get_conn()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM VehicleAccessRequests
-            WHERE HODApproval = 'Approved' AND (SecurityApproval IS NULL OR SecurityApproval = 'Pending')
-        """)
-        rows = cursor.fetchall()
-        requests = [dict(zip([desc[0] for desc in cursor.description], row)) for row in rows]
-        return render_template('security_requests.html', requests=requests)
+        cursor.execute(
+            """
+            SELECT RequestId, RequestedBy, VehicleType, AccessLocation, FromDate, ToDate, HODApproval, SecurityApproval
+            FROM VehicleAccessRequests
+            WHERE HODApproval='Approved' AND SecurityApproval='Pending'
+            ORDER BY RequestId DESC
+            """
+        )
+        for r in cursor.fetchall():
+            requests.append({
+                "RequestId": r[0], "RequestedBy": r[1], "VehicleType": r[2],
+                "AccessLocation": r[3], "FromDate": r[4], "ToDate": r[5],
+                "HODApproval": r[6], "SecurityApproval": r[7]
+            })
+        return render_template("security_requests.html", requests=requests)
     except Exception as e:
-        return f"\u274c Error loading security requests: {str(e)}", 500
+        flash(f"Error loading Security requests: {str(e)}")
+        return redirect(url_for("security"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-@app.route('/security_approve/<int:request_id>', methods=['POST'])
+
+@app.route("/security_approve/<int:request_id>", methods=["POST"])
 def security_approve(request_id):
+    if not require_login() or not require_role("Security"):
+        flash("Access denied.")
+        return redirect(url_for("home"))
+    new_status = request.form.get("status") or "Approved"
+    if new_status not in ("Pending", "Approved"):
+        flash("Invalid status.")
+        return redirect(url_for("security_requests"))
+    conn = None
+    cursor = None
     try:
-        status = request.form.get('status', 'Approved')
-        conn = pyodbc.connect(conn_str)
+        conn = get_conn()
         cursor = conn.cursor()
-        cursor.execute("UPDATE VehicleAccessRequests SET SecurityApproval = ? WHERE RequestID = ?", (status, request_id))
+        cursor.execute(
+            "UPDATE VehicleAccessRequests SET SecurityApproval=%s WHERE RequestId=%s",
+            (new_status, request_id),
+        )
         conn.commit()
-        flash("Pass Approved by Security")
-        return redirect(url_for('security_requests'))
+        flash(f"Security status updated to {new_status} for request {request_id}")
+        return redirect(url_for("security_requests"))
     except Exception as e:
-        return f"Error: {str(e)}", 500
+        flash(f"Error updating Security status: {str(e)}")
+        return redirect(url_for("security_requests"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-@app.route('/delete_security_request/<int:request_id>', methods=['POST'])
-def delete_security_request(request_id):
+
+# -------------------------
+# ADMIN
+# -------------------------
+@app.route("/admin")
+def admin():
+    if not require_login() or not require_role("Admin"):
+        flash("Access denied. Admin only.")
+        return redirect(url_for("home"))
+
+    conn = None
+    cursor = None
+    stats = {}
+    recent = []
+    employees = []
     try:
-        conn = pyodbc.connect(conn_str)
+        conn = get_conn()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM VehicleAccessRequests WHERE RequestId = ?", request_id)
-        conn.commit()
-        flash("Deleted Approved Request Successfully")
-        return redirect(url_for('security_requests'))
-    except Exception as e:
-        return f"Error: {str(e)}", 500
+        cursor.execute("SELECT COUNT(*) FROM VehicleAccessRequests")
+        stats["total_requests"] = cursor.fetchone()[0] or 0
+        cursor.execute("SELECT COUNT(*) FROM VehicleAccessRequests WHERE HODApproval='Pending'")
+        stats["hod_pending"] = cursor.fetchone()[0] or 0
+        cursor.execute("SELECT COUNT(*) FROM VehicleAccessRequests WHERE HODApproval='Approved' AND SecurityApproval='Pending'")
+        stats["security_pending"] = cursor.fetchone()[0] or 0
+        cursor.execute("SELECT COUNT(*) FROM VehicleAccessRequests WHERE SecurityApproval='Approved'")
+        stats["approved"] = cursor.fetchone()[0] or 0
+        cursor.execute("SELECT COUNT(*) FROM VehicleAccessRequests WHERE HODApproval='Rejected' OR SecurityApproval='Rejected'")
+        stats["rejected"] = cursor.fetchone()[0] or 0
 
-if __name__ == '__main__':
+        cursor.execute(
+            """
+            SELECT RequestId, RequestedBy, VehicleNo, FromDate, ToDate, HODApproval, SecurityApproval
+            FROM VehicleAccessRequests
+            ORDER BY RequestId DESC
+            LIMIT 20
+            """
+        )
+        for r in cursor.fetchall():
+            recent.append({
+                "RequestId": r[0], "RequestedBy": r[1], "VehicleNo": r[2],
+                "FromDate": r[3], "ToDate": r[4], "HODApproval": r[5], "SecurityApproval": r[6]
+            })
+
+        cursor.execute("SELECT DomainId, DomainName, Email, MobileNumber FROM RegisteredEmployees")
+        for e in cursor.fetchall():
+            employees.append({"DomainId": e[0], "DomainName": e[1], "Email": e[2], "MobileNumber": e[3]})
+
+        return render_template("admin.html", stats=stats, requests=recent, employees=employees)
+    except Exception as e:
+        flash(f"Error loading admin data: {str(e)}")
+        return redirect(url_for("home"))
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@app.route("/details")
+@app.route("/details/<int:request_id>")
+def details(request_id=None):
+    if not require_login() or not require_role("Admin"):
+        flash("Access denied. Admin only.")
+        return redirect(url_for("home"))
+
+    req = None
+    if request_id:
+        conn = None
+        cursor = None
+        try:
+            conn = get_conn()
+            cursor = conn.cursor()
+            r = fetch_request_by_id(cursor, request_id)
+            if r:
+                req = {
+                    "RequestId": r[0], "RequestedBy": r[1], "VehicleType": r[2],
+                    "TypeOfVehicle": r[3], "AccessLocation": r[4], "VehicleNo": r[5],
+                    "EngineNo": r[6], "ChassisNo": r[7], "Model": r[8],
+                    "OwnerUsername": r[9], "Address": r[10], "ContactNo": r[11],
+                    "DriverName": r[12], "DriverAddress": r[13],
+                    "FromDate": r[14], "ToDate": r[15], "HODApproval": r[16],
+                    "SecurityApproval": r[17]
+                }
+        except Exception as e:
+            flash(f"Error loading request detail: {str(e)}")
+            return redirect(url_for("admin"))
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
+    return render_template("details.html", req=req)
+
+
+@app.route("/dashboard")
+def dashboard():
+    if not require_login():
+        flash("Please login first.")
+        return redirect(url_for("home"))
+    return render_template("dashboard.html")
+
+
+
+@app.route("/get_table_data/<table>")
+def get_table_data(table):
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    try:
+        # 🔥 IMPORTANT: use quotes (your tables are case-sensitive)
+        query = f'SELECT * FROM "{table}"'
+        print("Executing:", query)  # debug
+
+        cur.execute(query)
+
+        columns = [desc[0] for desc in cur.description]
+        rows = cur.fetchall()
+
+        result = [dict(zip(columns, row)) for row in rows]
+
+        return jsonify(result)
+
+    except Exception as e:
+        print("ERROR:", e)   # 👈 YOU MUST CHECK THIS
+        return jsonify({"error": str(e)})
+
+    finally:
+        cur.close()
+        conn.close()
+
+@app.route("/update_table", methods=["POST"])
+def update_table():
+    data = request.json
+    table = data["table"]
+    rows = data["rows"]
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    try:
+
+        # -----------------------------
+        # RegisteredEmployees
+        # -----------------------------
+        if table == "RegisteredEmployees":
+            for row in rows:
+                domain_id = row.get("DomainId", "").strip()
+                if not domain_id:
+                    continue
+
+                cur.execute("""SELECT COUNT(*) FROM "RegisteredEmployees" WHERE "DomainId"=%s""", (domain_id,))
+                exists = cur.fetchone()[0]
+
+                if exists == 0:
+                    cur.execute("""
+                        INSERT INTO "RegisteredEmployees"
+                        ("DomainId","DomainName","Email","Password","MobileNumber")
+                        VALUES (%s,%s,%s,%s,%s)
+                    """, (
+                        domain_id,
+                        row.get("DomainName",""),
+                        row.get("Email",""),
+                        "default123",
+                        row.get("MobileNumber","")
+                    ))
+                    print("INSERTED EMP:", domain_id)
+                else:
+                    cur.execute("""
+                        UPDATE "RegisteredEmployees"
+                        SET "DomainName"=%s,
+                            "Email"=%s,
+                            "MobileNumber"=%s
+                        WHERE "DomainId"=%s
+                    """, (
+                        row.get("DomainName",""),
+                        row.get("Email",""),
+                        row.get("MobileNumber",""),
+                        domain_id
+                    ))
+                    print("UPDATED EMP:", domain_id)
+
+        # -----------------------------
+        # RelianceEmployees
+        # -----------------------------
+        elif table == "RelianceEmployees":
+            for row in rows:
+                domain_id = row.get("DomainId", "").strip()
+                if not domain_id:
+                    continue
+
+                cur.execute("""SELECT COUNT(*) FROM "RelianceEmployees" WHERE "DomainId"=%s""", (domain_id,))
+                exists = cur.fetchone()[0]
+
+                if exists == 0:
+                    cur.execute("""
+                        INSERT INTO "RelianceEmployees" ("DomainId")
+                        VALUES (%s)
+                    """, (domain_id,))
+                    print("INSERTED REL:", domain_id)
+
+        # -----------------------------
+        # Admin
+        # -----------------------------
+        elif table == "Admin":
+            for row in rows:
+                domain_id = row.get("DomainId","").strip()
+                if not domain_id:
+                    continue
+
+                cur.execute("""
+                    UPDATE "Admin"
+                    SET "DomainName"=%s,
+                        "Email"=%s,
+                        "MobileNumber"=%s
+                    WHERE "DomainId"=%s
+                """, (
+                    row.get("DomainName",""),
+                    row.get("Email",""),
+                    row.get("MobileNumber",""),
+                    domain_id
+                ))
+                print("UPDATED ADMIN:", domain_id)
+
+        # -----------------------------
+        # HOD
+        # -----------------------------
+        elif table == "HOD":
+            for row in rows:
+                user_id = row.get("UserId")
+
+                cur.execute("""SELECT COUNT(*) FROM "HOD" WHERE "UserId"=%s""", (user_id,))
+                exists = cur.fetchone()[0]
+
+                if exists == 0:
+                    cur.execute("""
+                        INSERT INTO "HOD"
+                        ("DomainId","DomainName","Password","Department","Email","MobileNumber")
+                        VALUES (%s,%s,%s,%s,%s,%s)
+                    """, (
+                        row.get("DomainId",""),
+                        row.get("DomainName",""),
+                        row.get("Password",""),
+                        row.get("Department",""),
+                        row.get("Email",""),
+                        row.get("MobileNumber","")
+                    ))
+                    print("INSERTED HOD")
+                else:
+                    cur.execute("""
+                        UPDATE "HOD"
+                        SET "DomainId"=%s,
+                            "DomainName"=%s,
+                            "Password"=%s,
+                            "Department"=%s,
+                            "Email"=%s,
+                            "MobileNumber"=%s
+                        WHERE "UserId"=%s
+                    """, (
+                        row.get("DomainId",""),
+                        row.get("DomainName",""),
+                        row.get("Password",""),
+                        row.get("Department",""),
+                        row.get("Email",""),
+                        row.get("MobileNumber",""),
+                        user_id
+                    ))
+                    print("UPDATED HOD:", user_id)
+
+        # -----------------------------
+        # Security
+        # -----------------------------
+        elif table == "Security":
+            for row in rows:
+                user_id = row.get("UserId")
+
+                cur.execute("""SELECT COUNT(*) FROM "Security" WHERE "UserId"=%s""", (user_id,))
+                exists = cur.fetchone()[0]
+
+                if exists == 0:
+                    cur.execute("""
+                        INSERT INTO "Security"
+                        ("DomainId","DomainName","Password","Email","MobileNumber")
+                        VALUES (%s,%s,%s,%s,%s)
+                    """, (
+                        row.get("DomainId",""),
+                        row.get("DomainName",""),
+                        row.get("Password",""),
+                        row.get("Email",""),
+                        row.get("MobileNumber","")
+                    ))
+                    print("INSERTED SECURITY")
+                else:
+                    cur.execute("""
+                        UPDATE "Security"
+                        SET "DomainId"=%s,
+                            "DomainName"=%s,
+                            "Password"=%s,
+                            "Email"=%s,
+                            "MobileNumber"=%s
+                        WHERE "UserId"=%s
+                    """, (
+                        row.get("DomainId",""),
+                        row.get("DomainName",""),
+                        row.get("Password",""),
+                        row.get("Email",""),
+                        row.get("MobileNumber",""),
+                        user_id
+                    ))
+                    print("UPDATED SECURITY:", user_id)
+
+        # -----------------------------
+        # VehicleAccessRequests
+        # -----------------------------
+        elif table == "VehicleAccessRequests":
+            for row in rows:
+                request_id = row.get("RequestId")
+
+                cur.execute("""SELECT COUNT(*) FROM "VehicleAccessRequests" WHERE "RequestId"=%s""", (request_id,))
+                exists = cur.fetchone()[0]
+
+                if exists == 0:
+                    cur.execute("""
+                        INSERT INTO "VehicleAccessRequests"
+                        ("RequestedBy","VehicleType","TypeOfVehicle","AccessLocation","VehicleNo",
+                         "EngineNo","ChassisNo","Model","OwnerUsername","Address","ContactNo",
+                         "DriverName","DriverAddress","FromDate","ToDate","HODApproval","SecurityApproval")
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """, (
+                        row.get("RequestedBy",""),
+                        row.get("VehicleType",""),
+                        row.get("TypeOfVehicle",""),
+                        row.get("AccessLocation",""),
+                        row.get("VehicleNo",""),
+                        row.get("EngineNo",""),
+                        row.get("ChassisNo",""),
+                        row.get("Model",""),
+                        row.get("OwnerUsername",""),
+                        row.get("Address",""),
+                        row.get("ContactNo",""),
+                        row.get("DriverName",""),
+                        row.get("DriverAddress",""),
+                        row.get("FromDate"),
+                        row.get("ToDate"),
+                        row.get("HODApproval","Pending"),
+                        row.get("SecurityApproval","Pending")
+                    ))
+                    print("INSERTED REQUEST")
+                else:
+                    cur.execute("""
+                        UPDATE "VehicleAccessRequests"
+                        SET "HODApproval"=%s,
+                            "SecurityApproval"=%s
+                        WHERE "RequestId"=%s
+                    """, (
+                        row.get("HODApproval",""),
+                        row.get("SecurityApproval",""),
+                        request_id
+                    ))
+                    print("UPDATED REQUEST:", request_id)
+
+        conn.commit()
+        print("COMMIT SUCCESS ✅")
+
+        return jsonify({"status": "success"})
+
+    except Exception as e:
+        print("ERROR ❌:", e)
+        return jsonify({"error": str(e)})
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# -------------------------
+# RUN
+# -------------------------
+if __name__ == "__main__":
     app.run(debug=True)
+
+
+
+
+
