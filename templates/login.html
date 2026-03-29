@@ -111,16 +111,17 @@
 <body>
 
     <div class="main-title">
-        Welcomee to Vehicle Access Management 
+        Welcome to Vehicle Access Management 
     </div>
 
     <!-- 🔥 Demo Access Panel -->
     <div class="demo-panel">
         <h3>Demo Access</h3>
+        <button onclick="goToRole('admin')">Login as Admin</button>
         <button onclick="goToRole('employee')">Login as Employee</button>
         <button onclick="goToRole('hod')">Login as HOD</button>
         <button onclick="goToRole('security')">Login as Security</button>
-        <button onclick="goToRole('admin')">Login as Admin</button>
+        
     </div>
 
     <div class="login-box">
@@ -149,15 +150,16 @@
     <!-- 🔥 Script -->
     <script>
         function goToRole(role) {
-            if (role === "employee") {
+            if (role === "admin") {
+                window.location.href = "/admin";
+            } else if (role === "employee") {
                 window.location.href = "/enter_details";
             } else if (role === "hod") {
                 window.location.href = "/hod";
             } else if (role === "security") {
                 window.location.href = "/security";
-            } else if (role === "admin") {
-                window.location.href = "/admin";
-            }
+            } 
+            
         }
     </script>
 
