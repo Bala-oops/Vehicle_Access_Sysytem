@@ -74,11 +74,53 @@
             font-size: 14px;
             margin-top: 10px;
         }
+
+        /* 🔥 Demo Panel */
+        .demo-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 15px;
+            border-radius: 10px;
+            width: 190px;
+            box-shadow: 0 0 12px rgba(255,255,255,0.2);
+        }
+
+        .demo-panel h3 {
+            color: white;
+            font-size: 14px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .demo-panel button {
+            width: 100%;
+            margin-bottom: 6px;
+            padding: 7px;
+            font-size: 12px;
+            border-radius: 6px;
+            background-color: #2e7d32;
+        }
+
+        .demo-panel button:hover {
+            background-color: #1b5e20;
+        }
     </style>
 </head>
 <body>
+
     <div class="main-title">
         Welcome to Vehicle Access Management
+    </div>
+
+    <!-- 🔥 Demo Access Panel -->
+    <div class="demo-panel">
+        <h3>Demo Access</h3>
+        <button onclick="goToRole('employee')">Login as Employee</button>
+        <button onclick="goToRole('hod')">Login as HOD</button>
+        <button onclick="goToRole('security')">Login as Security</button>
+        <button onclick="goToRole('admin')">Login as Admin</button>
     </div>
 
     <div class="login-box">
@@ -103,5 +145,21 @@
         {% endif %}
         {% endwith %}
     </div>
+
+    <!-- 🔥 Script -->
+    <script>
+        function goToRole(role) {
+            if (role === "employee") {
+                window.location.href = "/enter_details";
+            } else if (role === "hod") {
+                window.location.href = "/hod";
+            } else if (role === "security") {
+                window.location.href = "/security";
+            } else if (role === "admin") {
+                window.location.href = "/admin";
+            }
+        }
+    </script>
+
 </body>
 </html>
