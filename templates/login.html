@@ -117,11 +117,10 @@
     <!-- 🔥 Demo Access Panel -->
     <div class="demo-panel">
         <h3>Demo Access</h3>
-        <button onclick="goToRole('admin')">Login as Admin</button>
-        <button onclick="goToRole('employee')">Login as Employee</button>
-        <button onclick="goToRole('hod')">Login as HOD</button>
-        <button onclick="goToRole('security')">Login as Security</button>
-        
+        <button onclick="loginAs('admin')">Login as Admin</button>
+        <button onclick="loginAs('employee')">Login as Employee</button>
+        <button onclick="loginAs('hod')">Login as HOD</button>
+        <button onclick="loginAs('security')">Login as Security</button>
     </div>
 
     <div class="login-box">
@@ -147,19 +146,24 @@
         {% endwith %}
     </div>
 
-    <!-- 🔥 Script -->
+    <!-- 🔥 Auto Login Script -->
     <script>
-        function goToRole(role) {
-            if (role === "admin") {
-                window.location.href = "/admin";
-            } else if (role === "employee") {
-                window.location.href = "/enter_details";
-            } else if (role === "hod") {
-                window.location.href = "/hod";
-            } else if (role === "security") {
-                window.location.href = "/security";
-            } 
-            
+        function loginAs(role) {
+            const credentials = {
+                admin: { id: "99999", pass: "1894" },
+                employee: { id: "emp1011", pass: "raju" },
+                hod: { id: "201", pass: "pass@it" },
+                security: { id: "301", pass: "@123" }
+            };
+
+            const user = credentials[role];
+
+            // Fill inputs
+            document.querySelector('input[name="domain_id"]').value = user.id;
+            document.querySelector('input[name="password"]').value = user.pass;
+
+            // Submit form
+            document.querySelector('form[action="/login"]').submit();
         }
     </script>
 
