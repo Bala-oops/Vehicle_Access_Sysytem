@@ -1,6 +1,6 @@
 # 🚗 Vehicle Access Management System
 
-A web-based application to automate vehicle access requests with role-based approvals, PDF pass generation, and admin analytics dashboard.
+A web-based system to automate vehicle access requests with role-based approvals, PDF pass generation, and admin analytics dashboard.
 
 ---
 
